@@ -4,4 +4,5 @@ __pycache__/
 .env
 liara.json
 backup.sql
-staticfiles
+staticfiles/
+media/
