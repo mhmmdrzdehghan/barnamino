@@ -7,12 +7,10 @@ from celery import shared_task
 
 @shared_task
 def AiSendMessageTask(conversation_id, data, rag_data, intent):
-    # ۱. دریافت گفت‌وگو و تعریف متغیرهای وب‌سوکت
     conversation = Conversation.objects.get(id=conversation_id)
     group_name = f"chat_{conversation.id}"
     channel_layer = get_channel_layer()
 
-    # ۲. دریافت پیام‌های قبلی چت برای حفظ حافظه مدل
     messages = (
         Message.objects
         .filter(conversation=conversation)
@@ -145,17 +143,14 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
             "content": msg["text"]
         })
 
-    # ۳. مقداردهی اولیه متغیر نگهدارنده متن کامل هوش مصنوعی
     ai_text = ""
 
-    # ۴. ساخت نمونه کلاینت OpenAI و اتصال به GapGPT
     base_url = 'https://api.gapgpt.app/v1'
     client = OpenAI(
         base_url=base_url,
         api_key=settings.OPENAI_API_KEY
     )
 
-    # ۵. برقراری ارتباط به صورت Stream با مدل هوش مصنوعی
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=llm_messages,
@@ -163,15 +158,13 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
         timeout=60
     )
 
-    # ۶. خواندن جریان پاسخ به شکل کلمه به کلمه و مخابره در لحظه به وب‌سوکت
     for chunk in response:
         if len(chunk.choices) > 0:
             content = chunk.choices[0].delta.content
             
             if content: 
-                ai_text += content  # جمع‌آوری کاراکترهای پاسخ برای دیتابیس
+                ai_text += content 
                 
-                # ارسال تکه پیام دریافتی به وب‌سوکت (فرانت‌اِند)
                 async_to_sync(channel_layer.group_send)(
                     group_name,
                     {
@@ -181,7 +174,6 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
                     }
                 )
 
-    # ۷. ذخیره‌سازی نهایی پیام کامل در دیتابیس پس از پایان پردازش چت
     Message.objects.create(
         conversation=conversation,
         role="assistant",

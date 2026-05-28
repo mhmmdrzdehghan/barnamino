@@ -14,6 +14,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def ai_message(self, event):
         await self.send(text_data=json.dumps({
-            "message": event["text"],
+            "text": event["text"],
             "role": event["role"],
         }))
