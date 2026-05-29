@@ -17,3 +17,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "text": event["text"],
             "role": event["role"],
         }))
+
+
+    async def stream_done(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "done",
+            "full_text": event["full_text"]
+        }))

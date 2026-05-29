@@ -174,6 +174,16 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
                     }
                 )
 
+
+
+    async_to_sync(channel_layer.group_send)(
+    group_name,
+    {
+        "type": "stream_done",
+        "full_text": ai_text
+    }
+)            
+
     Message.objects.create(
         conversation=conversation,
         role="assistant",
