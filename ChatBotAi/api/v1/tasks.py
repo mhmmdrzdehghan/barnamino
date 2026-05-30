@@ -4,12 +4,35 @@ from ChatBotAi.models import Message, Conversation
 from asgiref.sync import async_to_sync  
 from channels.layers import get_channel_layer
 from celery import shared_task
+from .utils import intent_detect , PrepareRagData
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 
 @shared_task
-def AiSendMessageTask(conversation_id, data, rag_data, intent):
+def AiSendMessageTask(conversation_id, data,text , userid):
+    task_start = time.perf_counter()
     conversation = Conversation.objects.get(id=conversation_id)
     group_name = f"chat_{conversation.id}"
     channel_layer = get_channel_layer()
+
+    start = time.perf_counter()
+
+
+    intent = intent_detect(text)
+
+    logger.info("intent_detect: %.3f sec",time.perf_counter() - start)
+
+
+    start = time.perf_counter()
+    rag_data = PrepareRagData(intent , userid)
+    logger.info("PrepareRagData: %.3f sec",time.perf_counter() - start)
+
+
+    start = time.perf_counter()
 
     messages = (
         Message.objects
@@ -17,6 +40,10 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
         .order_by("-created_at")[:20]
         .values("text", "role")[::-1]
     )
+
+    logger.info(
+    "load_messages: %.3f sec",
+    time.perf_counter() - start)
 
     rag_context = ""
 
@@ -151,6 +178,9 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
         api_key=settings.OPENAI_API_KEY
     )
 
+    start = time.perf_counter()
+
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=llm_messages,
@@ -158,13 +188,29 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
         timeout=60
     )
 
+    logger.info(
+    "openai_connect: %.3f sec",
+    time.perf_counter() - start)
+
+
+    stream_start = time.perf_counter()
+    first_chunk = True
+
     for chunk in response:
+
+        if first_chunk:
+            logger.info(
+                "first_chunk: %.3f sec",
+                time.perf_counter() - stream_start
+            )
+            first_chunk = False
+
         if len(chunk.choices) > 0:
             content = chunk.choices[0].delta.content
-            
-            if content: 
-                ai_text += content 
-                
+
+            if content:
+                ai_text += content
+
                 async_to_sync(channel_layer.group_send)(
                     group_name,
                     {
@@ -173,6 +219,9 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
                         "role": "assistant"
                     }
                 )
+    logger.info(
+    "stream_total: %.3f sec",
+    time.perf_counter() - stream_start)           
 
 
 
@@ -189,5 +238,9 @@ def AiSendMessageTask(conversation_id, data, rag_data, intent):
         role="assistant",
         text=ai_text
     )
+
+    logger.info(
+    "task_total: %.3f sec",
+    time.perf_counter() - task_start)
 
     return ai_text

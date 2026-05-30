@@ -7,89 +7,10 @@ from ChatBotAi.models import Conversation , Message
 from .serializers import MessageSeralizer
 import jdatetime
 from rest_framework.response import Response
-from celery.result import AsyncResult
-from .Queris import DailyPlanData , CathUpData
-from School.api.v1.queries import PreparePlanDataForAI , PrepareDataInWeekAi
-from django.conf import settings
-from openai import OpenAI
+
 from drf_spectacular.utils import extend_schema
-import json
-import httpx
 
 
-
-def intent_detect(text):
-    prompt = f"""
-    تو فقط وظیفه تشخیص نوع درخواست دانش‌آموز را داری.
-
-
-    فقط یکی از intent های زیر را برگردان:
-
-    - daily_plan
-    - catch_up
-    - Report_analysis
-    - study_method
-    - general
-
-
-    متن دانش‌آموز:
-    "{text}"
-
-    خروجی که میدی فقط باید جیسون باشد و هیچ تایپ دیگری قابل قبول نیست
-
-    به عنوان مثال :
-    {{"intent":"daily_plan"}}
-    """
-    
-    OPENAI_API_KEY=settings.OPENAI_API_KEY
-    base_url='https://api.gapgpt.app/v1'
-
-
-
-    # return Response({'key':api_key , 'url':base_url})
-    client  = OpenAI(base_url=base_url , api_key=OPENAI_API_KEY)
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0,
-        max_tokens=30
-    )
-
-
-
-    content = response.choices[0].message.content
-
-    data = json.loads(content)
-
-    return data["intent"]
-
-def PrepareRagData(intent , User_id):
-    if intent =="daily_plan":
-        return DailyPlanData(User_id)
-
-    elif intent =="catch_up":
-        return CathUpData(User_id)
-
-    elif intent =="Report_analysis":
-        plan = PreparePlanDataForAI(User_id)
-        report = PrepareDataInWeekAi(User_id) 
-        return {
-            "plan": plan,
-            "report": report
-        }
-    
-
-    elif intent == "study_method":
-        return None
-
-    else:
-        return None
 
 
 desc = """
@@ -125,7 +46,6 @@ desc = """
 class ChatWithAi(APIView):
 
     def post(self, request, *args, **kwargs):
-        # today        =  jdatetime.date.today().togregorian()
         conversation = Conversation.objects.filter(created_by=request.user).first()
 
         if not conversation:
@@ -133,16 +53,6 @@ class ChatWithAi(APIView):
 
         text = request.data.get('text')
 
-
-        intent = intent_detect(text)
-
-        # return Response(intent)
-
-        rag_data = PrepareRagData(intent , request.user.id)
-
-        # return Response(rag_data)
-
-        
 
         Message.objects.create(text=text , role='user' , conversation=conversation)
         student = request.user.Student_Profile
@@ -152,9 +62,8 @@ class ChatWithAi(APIView):
             "field_of_study":student.field_of_study
         }
 
-        
 
-        AiSendMessageTask.delay(conversation.id , data , rag_data , intent)
+        AiSendMessageTask.delay(conversation.id , data , text , request.user.id)
 
         return Response({'status':'ok'})
 
